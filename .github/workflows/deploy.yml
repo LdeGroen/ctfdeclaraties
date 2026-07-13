@@ -24,21 +24,25 @@ jobs:
         env:
           CI: false
 
-      - name: Deploy build/ via FTPS
-        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
-        with:
-          server: ${{ secrets.FTP_SERVER }}
-          username: ${{ secrets.FTP_USERNAME }}
-          password: ${{ secrets.FTP_PASSWORD }}
-          server-dir: ${{ secrets.FTP_SERVER_DIR }}
-          protocol: ftps
-          security: loose
-          timeout: 60000
-          local-dir: ./build/
-          state-name: .ftp-deploy-sync-state.json
-          dangerous-clean-slate: false
-          exclude: |
-            **/.git*
-            **/.git*/**
-            **/node_modules/**
-            **/src/**
+      # SFTP i.p.v. FTPS: één SSH-verbinding, geen los passief datakanaal (dat de
+      # Plesk-server voor deze vhost afknijpt → ECONNRESET, zelfde kwaal als bij
+      # cafes/veiligheid/publieksonderzoek). Hergebruikt dezelfde FTP_*-secrets (poort 22).
+      - name: Deploy build/ via SFTP
+        env:
+          SFTP_SERVER: ${{ secrets.FTP_SERVER }}
+          SFTP_USER: ${{ secrets.FTP_USERNAME }}
+          SFTP_PASS: ${{ secrets.FTP_PASSWORD }}
+          SFTP_DIR: ${{ secrets.FTP_SERVER_DIR }}
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq sshpass
+          DIR="${SFTP_DIR#/}"; DIR="${DIR%/}"
+          echo "Doelmap (relatief): $DIR"
+          sshpass -p "$SFTP_PASS" sftp -o StrictHostKeyChecking=no -P 22 "$SFTP_USER@$SFTP_SERVER" <<SFTPEOF
+          -mkdir $DIR
+          put -r ./build/* $DIR/
+          bye
+          SFTPEOF
+          echo "== verificatie =="
+          echo "ls $DIR/index.html" | sshpass -p "$SFTP_PASS" sftp -o StrictHostKeyChecking=no -P 22 "$SFTP_USER@$SFTP_SERVER" | tee /tmp/v.txt
+          grep -q "index.html" /tmp/v.txt || { echo "!! Upload niet teruggevonden op de server"; exit 1; }
+          echo "Upload OK"
