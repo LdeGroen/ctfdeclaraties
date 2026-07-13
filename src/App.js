@@ -87,6 +87,16 @@ function App() {
     const voegItemToe = () => setItems((arr) => [...arr, { ...LEEG_ITEM }]);
     const verwijderItem = (i) => setItems((arr) => arr.length === 1 ? arr : arr.filter((_, j) => j !== i));
 
+    const verwijder = async (id) => {
+        if (!window.confirm('Deze inzending verwijderen? Dat kan alleen zolang die nog niet is beoordeeld.')) return;
+        setFoutmelding(null);
+        try {
+            const res = await fetch(`${API_URL}/api/declaraties/mine/${id}`, { method: 'DELETE', headers: auth() });
+            if (!res.ok) { const j = await res.json().catch(() => ({})); throw new Error(j.message || `HTTP ${res.status}`); }
+            laad();
+        } catch (err) { setFoutmelding(err.message || 'Verwijderen mislukte.'); }
+    };
+
     const uploadBon = async (i, file) => {
         if (!file) return;
         setUploadIdx(i);
@@ -264,7 +274,12 @@ function App() {
                                         <div className="text-xs text-gray-500 truncate">{fmtDatum(d.datum || d.created_at)} — {d.omschrijving}</div>
                                         {d.status === 'afgewezen' && d.opmerking && <div className="text-xs text-red-600 mt-0.5">Reden: {d.opmerking}</div>}
                                     </div>
-                                    <span className={`text-xs font-semibold px-2 py-0.5 rounded-full whitespace-nowrap ml-3 ${cls}`}>{label}</span>
+                                    <div className="flex items-center gap-2 ml-3">
+                                        <span className={`text-xs font-semibold px-2 py-0.5 rounded-full whitespace-nowrap ${cls}`}>{label}</span>
+                                        {d.status === 'ingediend' && (
+                                            <button onClick={() => verwijder(d.id)} title="Verwijderen" className="text-gray-300 hover:text-red-600 text-sm">🗑</button>
+                                        )}
+                                    </div>
                                 </div>
                             );
                         })}
