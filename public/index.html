@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html lang="nl">
+  <head>
+    <meta charset="utf-8" />
+    <link rel="icon" href="%PUBLIC_URL%/favicon.ico" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#20747F" />
+    <meta name="description" content="Declaraties en bonnen insturen — Café Theater Festival" />
+    <meta name="robots" content="noindex,nofollow" />
+    <link rel="apple-touch-icon" href="%PUBLIC_URL%/logo192.png" />
+    <link rel="manifest" href="%PUBLIC_URL%/manifest.json" />
+    <title>Declaraties · Café Theater Festival</title>
+    <!-- CTF-foutmelder: meldt onafgevangen JS-fouten aan de backend (ops-push + software-kaart) -->
+    <script>/* ctf-foutmelder */(function(){var app='declaraties';if(/^(localhost|127\.)/.test(location.hostname))return;var gezien={};function meld(m,st){try{m=String(m||'').slice(0,500);var k=m.slice(0,120);if(!m||gezien[k])return;gezien[k]=1;fetch('https://backend.cafetheaterfestival.nl/api/ops/client-error',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({app:app,message:m,stack:String(st||'').slice(0,2000),url:location.href.slice(0,300)})}).catch(function(){});}catch(e){}}window.addEventListener('error',function(e){if(e&&e.message)meld(e.message,e.error&&e.error.stack);});window.addEventListener('unhandledrejection',function(e){var r=(e&&e.reason)||{};meld(r.message||String(r),r.stack);});})();</script>
+  </head>
+  <body>
+    <noscript>Je hebt JavaScript nodig om deze app te gebruiken.</noscript>
+    <div id="root"></div>
+  </body>
+</html>
