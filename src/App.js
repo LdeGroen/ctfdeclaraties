@@ -5,7 +5,7 @@ import { AppShell, FormField, SubmitButton, StatusMessage } from 'ctf-ui/compone
 const TOKEN_KEY = 'ctf_declaraties_token';
 const getToken = () => localStorage.getItem(TOKEN_KEY);
 const auth = () => ({ Accept: 'application/json', Authorization: `Bearer ${getToken()}` });
-const euro = (n) => Number(n).toLocaleString('nl-NL', { style: 'currency', currency: 'EUR' });
+const euro = (n) => Number(n || 0).toLocaleString('nl-NL', { style: 'currency', currency: 'EUR' });
 const fmtDatum = (d) => d ? new Date(d).toLocaleDateString('nl-NL', { day: '2-digit', month: 'short' }) : '';
 
 const STATUS_LABEL = {
@@ -15,20 +15,20 @@ const STATUS_LABEL = {
     afgewezen: ['Afgewezen', 'text-red-700 bg-red-100'],
 };
 
-const LEEG = { soort: 'declaratie', bedrag: '', omschrijving: '', datum: '', iban: '', iban_naam: '', bon_url: '' };
+const LEEG_FORM = { soort: 'declaratie', datum: '', iban: '', iban_naam: '', straat: '', huisnummer: '', postcode: '', stad: '' };
+const LEEG_ITEM = { omschrijving: '', bedrag: '', bon_url: '' };
 
 function App() {
     const [token, setToken] = useState(getToken());
-    const [me, setMe] = useState(null);           // {name, email}
-    const [prefill, setPrefill] = useState({});
+    const [me, setMe] = useState(null);
     const [declaraties, setDeclaraties] = useState([]);
-    const [form, setForm] = useState(LEEG);
-    const [status, setStatus] = useState('idle');  // idle | submitting | success
-    const [uploading, setUploading] = useState(false);
+    const [form, setForm] = useState(LEEG_FORM);
+    const [items, setItems] = useState([{ ...LEEG_ITEM }]);
+    const [status, setStatus] = useState('idle');
+    const [uploadIdx, setUploadIdx] = useState(null);
     const [foutmelding, setFoutmelding] = useState(null);
     const [authFout, setAuthFout] = useState(null);
 
-    // Token / auth_error uit de OAuth-redirect halen en de URL opschonen.
     useEffect(() => {
         const params = new URLSearchParams(window.location.search);
         const t = params.get('token');
@@ -58,7 +58,6 @@ function App() {
             ]);
             if (meRes.status === 401 || mijnRes.status === 401) { logout(); return; }
             const meJson = await meRes.json();
-            // Alleen @cafetheaterfestival.nl-medewerkers.
             if (!String(meJson.email || '').endsWith('@cafetheaterfestival.nl')) {
                 setAuthFout('Log in met je @cafetheaterfestival.nl-account.');
                 logout();
@@ -67,8 +66,12 @@ function App() {
             setMe(meJson);
             const mijn = await mijnRes.json();
             setDeclaraties(mijn.declaraties || []);
-            setPrefill(mijn.prefill || {});
-            setForm((f) => ({ ...f, iban: mijn.prefill?.iban || '', iban_naam: mijn.prefill?.iban_naam || meJson.name || '' }));
+            const p = mijn.prefill || {};
+            setForm((f) => ({
+                ...f,
+                iban: p.iban || '', iban_naam: p.iban_naam || meJson.name || '',
+                straat: p.straat || '', huisnummer: p.huisnummer || '', postcode: p.postcode || '', stad: p.stad || '',
+            }));
         } catch (e) {
             setFoutmelding('Kon je gegevens niet laden. Probeer het later opnieuw.');
         }
@@ -80,11 +83,13 @@ function App() {
         const { name, value } = e.target;
         setForm((f) => ({ ...f, [name]: value }));
     };
+    const zetItem = (i, patch) => setItems((arr) => arr.map((it, j) => j === i ? { ...it, ...patch } : it));
+    const voegItemToe = () => setItems((arr) => [...arr, { ...LEEG_ITEM }]);
+    const verwijderItem = (i) => setItems((arr) => arr.length === 1 ? arr : arr.filter((_, j) => j !== i));
 
-    const uploadBon = async (e) => {
-        const file = e.target.files?.[0];
+    const uploadBon = async (i, file) => {
         if (!file) return;
-        setUploading(true);
+        setUploadIdx(i);
         setFoutmelding(null);
         try {
             const fd = new FormData();
@@ -92,13 +97,15 @@ function App() {
             const res = await fetch(`${API_URL}/api/declaraties/upload`, { method: 'POST', headers: auth(), body: fd });
             if (!res.ok) throw new Error(`HTTP ${res.status}`);
             const json = await res.json();
-            setForm((f) => ({ ...f, bon_url: json.url }));
+            zetItem(i, { bon_url: json.url });
         } catch (err) {
             setFoutmelding('Uploaden van de bon mislukte.');
         } finally {
-            setUploading(false);
+            setUploadIdx(null);
         }
     };
+
+    const totaal = items.reduce((s, it) => s + (parseFloat(String(it.bedrag).replace(',', '.')) || 0), 0);
 
     const verstuur = async (e) => {
         e.preventDefault();
@@ -107,19 +114,29 @@ function App() {
             setFoutmelding('Vul je IBAN in — daar betalen we de declaratie op uit.');
             return;
         }
+        if (items.some((it) => !it.omschrijving.trim() || !it.bedrag)) {
+            setFoutmelding('Elke post heeft een omschrijving en bedrag nodig.');
+            return;
+        }
+        if (form.soort === 'bon' && items.some((it) => !it.bon_url)) {
+            setFoutmelding('Voeg bij een bon van elke post het bonnetje toe als bewijs.');
+            return;
+        }
         setStatus('submitting');
         try {
+            const body = {
+                ...form,
+                items: items.map((it) => ({ omschrijving: it.omschrijving, bedrag: parseFloat(String(it.bedrag).replace(',', '.')), bon_url: it.bon_url || null })),
+            };
             const res = await fetch(`${API_URL}/api/declaraties`, {
-                method: 'POST',
-                headers: { ...auth(), 'Content-Type': 'application/json' },
-                body: JSON.stringify({ ...form, bedrag: parseFloat(String(form.bedrag).replace(',', '.')) }),
+                method: 'POST', headers: { ...auth(), 'Content-Type': 'application/json' }, body: JSON.stringify(body),
             });
             if (!res.ok) {
                 const j = await res.json().catch(() => ({}));
                 throw new Error(j.message || `HTTP ${res.status}`);
             }
             setStatus('success');
-            setForm({ ...LEEG, iban: form.iban, iban_naam: form.iban_naam });
+            setItems([{ ...LEEG_ITEM }]);
             laad();
         } catch (err) {
             setFoutmelding(err.message || 'Versturen mislukte.');
@@ -127,7 +144,6 @@ function App() {
         }
     };
 
-    // --- Niet ingelogd: loginscherm ---
     if (!token || !me) {
         return (
             <AppShell title="Declaraties & bonnen">
@@ -142,7 +158,6 @@ function App() {
         );
     }
 
-    // --- Ingelogd: formulier + eigen historie ---
     return (
         <AppShell title="Declaraties & bonnen">
             <div className="max-w-2xl mx-auto">
@@ -175,12 +190,51 @@ function App() {
                         </p>
                     </div>
 
+                    {/* Posten */}
+                    <div className="space-y-3">
+                        <label className="block text-sm font-medium text-gray-700">Posten</label>
+                        {items.map((it, i) => (
+                            <div key={i} className="border border-gray-200 rounded-lg p-3 space-y-2 relative">
+                                {items.length > 1 && (
+                                    <button type="button" onClick={() => verwijderItem(i)} className="absolute top-2 right-2 text-gray-400 hover:text-red-600 text-sm">✕</button>
+                                )}
+                                <div className="grid grid-cols-3 gap-2">
+                                    <div className="col-span-2">
+                                        <FormField label="Omschrijving" name={`oms_${i}`} placeholder="Waarvoor? (materiaal, reiskosten…)" value={it.omschrijving} onChange={(e) => zetItem(i, { omschrijving: e.target.value })} required />
+                                    </div>
+                                    <FormField label="Bedrag (€)" name={`bedrag_${i}`} type="text" inputMode="decimal" placeholder="24,50" value={it.bedrag} onChange={(e) => zetItem(i, { bedrag: e.target.value })} required />
+                                </div>
+                                <div>
+                                    <label className="block text-xs text-gray-500 mb-1">Bon / factuur {form.soort === 'bon' ? '(verplicht)' : '(aanrader)'}</label>
+                                    <input type="file" accept="image/*,application/pdf" onChange={(e) => uploadBon(i, e.target.files?.[0])} className="text-sm" />
+                                    {uploadIdx === i && <span className="text-xs text-gray-500 ml-2">Uploaden…</span>}
+                                    {it.bon_url && <span className="text-xs text-green-600 ml-2">✓ toegevoegd</span>}
+                                </div>
+                            </div>
+                        ))}
+                        <div className="flex items-center justify-between">
+                            <button type="button" onClick={voegItemToe} className="text-sm text-[#20747F] font-medium hover:underline">+ Nog een post toevoegen</button>
+                            <span className="text-sm text-gray-600">Totaal: <strong>{euro(totaal)}</strong></span>
+                        </div>
+                    </div>
+
                     <div className="grid grid-cols-2 gap-3">
-                        <FormField label="Bedrag (€)" name="bedrag" type="text" inputMode="decimal" placeholder="bijv. 24,50" value={form.bedrag} onChange={change} required />
                         <FormField label="Datum" name="datum" type="date" value={form.datum} onChange={change} />
                     </div>
 
-                    <FormField label="Omschrijving" name="omschrijving" textarea rows={3} placeholder="Waar was het voor? (bijv. materiaal, reiskosten, catering…)" value={form.omschrijving} onChange={change} required />
+                    {/* Adres */}
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Jouw adres</label>
+                        <p className="text-xs text-gray-400 mb-2">Voor op het declaratieformulier. Staat het al bij je contactgegevens, dan is het vast ingevuld.</p>
+                        <div className="grid grid-cols-3 gap-3">
+                            <div className="col-span-2"><FormField label="Straat" name="straat" placeholder="Straatnaam" value={form.straat} onChange={change} /></div>
+                            <FormField label="Huisnr." name="huisnummer" placeholder="12A" value={form.huisnummer} onChange={change} />
+                        </div>
+                        <div className="grid grid-cols-3 gap-3 mt-2">
+                            <FormField label="Postcode" name="postcode" placeholder="1234 AB" value={form.postcode} onChange={change} />
+                            <div className="col-span-2"><FormField label="Stad" name="stad" placeholder="Woonplaats" value={form.stad} onChange={change} /></div>
+                        </div>
+                    </div>
 
                     {form.soort === 'declaratie' && (
                         <div className="grid grid-cols-2 gap-3">
@@ -188,13 +242,6 @@ function App() {
                             <FormField label="Naam rekeninghouder" name="iban_naam" value={form.iban_naam} onChange={change} />
                         </div>
                     )}
-
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Bon / factuur {form.soort === 'bon' ? '(verplicht als bewijs)' : '(aanrader)'}</label>
-                        <input type="file" accept="image/*,application/pdf" onChange={uploadBon} className="text-sm" />
-                        {uploading && <span className="text-xs text-gray-500 ml-2">Uploaden…</span>}
-                        {form.bon_url && <span className="text-xs text-green-600 ml-2">✓ toegevoegd</span>}
-                    </div>
 
                     {foutmelding && <p className="text-red-600 text-sm">{foutmelding}</p>}
 
@@ -209,10 +256,11 @@ function App() {
                     <div className="space-y-2">
                         {declaraties.map((d) => {
                             const [label, cls] = STATUS_LABEL[d.status] || [d.status, 'text-gray-700 bg-gray-100'];
+                            const aantalPosten = (d.items || []).length;
                             return (
                                 <div key={d.id} className="bg-white rounded-lg p-3 flex items-center justify-between shadow">
                                     <div className="min-w-0">
-                                        <div className="font-medium text-gray-800 truncate">{euro(d.bedrag)} · {d.soort === 'bon' ? 'bon' : 'declaratie'}</div>
+                                        <div className="font-medium text-gray-800 truncate">{euro(d.bedrag)} · {d.soort === 'bon' ? 'bon' : 'declaratie'}{aantalPosten > 1 ? ` · ${aantalPosten} posten` : ''}</div>
                                         <div className="text-xs text-gray-500 truncate">{fmtDatum(d.datum || d.created_at)} — {d.omschrijving}</div>
                                         {d.status === 'afgewezen' && d.opmerking && <div className="text-xs text-red-600 mt-0.5">Reden: {d.opmerking}</div>}
                                     </div>
