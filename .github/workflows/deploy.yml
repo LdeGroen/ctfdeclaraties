@@ -27,22 +27,32 @@ jobs:
       # SFTP i.p.v. FTPS: één SSH-verbinding, geen los passief datakanaal (dat de
       # Plesk-server voor deze vhost afknijpt → ECONNRESET, zelfde kwaal als bij
       # cafes/veiligheid/publieksonderzoek). Hergebruikt dezelfde FTP_*-secrets (poort 22).
-      - name: Deploy build/ via SFTP
+      # Via FTPS met lftp. Ging eerder over SFTP, maar de server toont sinds
+      # augustus 2026 een welkomsttekst bij het inloggen, en die belandt op
+      # hetzelfde kanaal als het SFTP-protocol → "Received message too long".
+      # Zelfde storing als bij de software-kaart en de cafés-app.
+      - name: Deploy build/ via FTPS
         env:
-          SFTP_SERVER: ${{ secrets.FTP_SERVER }}
-          SFTP_USER: ${{ secrets.FTP_USERNAME }}
-          SFTP_PASS: ${{ secrets.FTP_PASSWORD }}
-          SFTP_DIR: ${{ secrets.FTP_SERVER_DIR }}
+          FTP_SERVER: ${{ secrets.FTP_SERVER }}
+          FTP_USER: ${{ secrets.FTP_USERNAME }}
+          FTP_PASS: ${{ secrets.FTP_PASSWORD }}
+          FTP_DIR: ${{ secrets.FTP_SERVER_DIR }}
         run: |
-          sudo apt-get update -qq && sudo apt-get install -y -qq sshpass
-          DIR="${SFTP_DIR#/}"; DIR="${DIR%/}"
+          sudo apt-get update -qq && sudo apt-get install -y -qq lftp
+          # We landen in de map die alle domeinmappen bevat → relatief pad
+          # gebruiken (leidende én sluitende slash weg).
+          DIR="${FTP_DIR#/}"; DIR="${DIR%/}"
           echo "Doelmap (relatief): $DIR"
-          sshpass -p "$SFTP_PASS" sftp -o StrictHostKeyChecking=no -P 22 "$SFTP_USER@$SFTP_SERVER" <<SFTPEOF
-          -mkdir $DIR
-          put -r ./build/* $DIR/
+          lftp -u "$FTP_USER","$FTP_PASS" "$FTP_SERVER" <<LFTPEOF
+          set ftp:ssl-force true
+          set ftp:ssl-protect-data true
+          set ssl:verify-certificate no
+          set net:max-retries 3
+          mkdir -p "$DIR"
+          mirror -R --parallel=2 ./build "$DIR"
           bye
-          SFTPEOF
+          LFTPEOF
           echo "== verificatie =="
-          echo "ls $DIR/index.html" | sshpass -p "$SFTP_PASS" sftp -o StrictHostKeyChecking=no -P 22 "$SFTP_USER@$SFTP_SERVER" | tee /tmp/v.txt
+          lftp -u "$FTP_USER","$FTP_PASS" "$FTP_SERVER" -e "set ftp:ssl-force true; set ssl:verify-certificate no; ls $DIR/index.html; bye" | tee /tmp/v.txt
           grep -q "index.html" /tmp/v.txt || { echo "!! Upload niet teruggevonden op de server"; exit 1; }
           echo "Upload OK"
