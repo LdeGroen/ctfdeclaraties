@@ -63,6 +63,7 @@ jobs:
       # server heeft altijd dezelfde inhoud. Na het omschakelen vervalt de
       # Plesk-stap hierboven en blijft alleen deze over.
       - name: Ook naar de nieuwe server (rsync over SSH)
+        if: always()
         env:
           SSH_KEY: ${{ secrets.NIEUWE_SERVER_KEY }}
           SSH_USER: ${{ secrets.NIEUWE_SERVER_USER }}
