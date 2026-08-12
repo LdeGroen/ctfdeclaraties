@@ -56,3 +56,25 @@ jobs:
           lftp -u "$FTP_USER","$FTP_PASS" "$FTP_SERVER" -e "set ftp:ssl-force true; set ssl:verify-certificate no; ls $DIR/index.html; bye" | tee /tmp/v.txt
           grep -q "index.html" /tmp/v.txt || { echo "!! Upload niet teruggevonden op de server"; exit 1; }
           echo "Upload OK"
+
+      # Tijdelijk ook naar de nieuwe server (migratie weg van Protagonist,
+      # augustus 2026). Zolang de DNS nog naar Plesk wijst is dit een
+      # schaduwkopie: de site blijft draaien waar hij draait, maar de nieuwe
+      # server heeft altijd dezelfde inhoud. Na het omschakelen vervalt de
+      # Plesk-stap hierboven en blijft alleen deze over.
+      - name: Ook naar de nieuwe server (rsync over SSH)
+        env:
+          SSH_KEY: ${{ secrets.NIEUWE_SERVER_KEY }}
+          SSH_USER: ${{ secrets.NIEUWE_SERVER_USER }}
+          DOEL_PAD: ${{ secrets.NIEUWE_SERVER_PAD }}
+        run: |
+          if [ -z "$SSH_KEY" ] || [ -z "$SSH_USER" ]; then
+            echo "nieuwe server nog niet ingesteld — overgeslagen"; exit 0
+          fi
+          mkdir -p ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/nieuw_key
+          chmod 600 ~/.ssh/nieuw_key
+          rsync -az --delete \
+            -e "ssh -i ~/.ssh/nieuw_key -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null" \
+            ./build/ "$SSH_USER@167.233.167.13:htdocs/$DOEL_PAD/"
+          echo "gekopieerd naar de nieuwe server: $DOEL_PAD"
