@@ -1,4 +1,4 @@
-name: Deploy to Plesk
+name: Deploy
 
 on:
   push:
@@ -24,44 +24,6 @@ jobs:
         env:
           CI: false
 
-      # SFTP i.p.v. FTPS: één SSH-verbinding, geen los passief datakanaal (dat de
-      # Plesk-server voor deze vhost afknijpt → ECONNRESET, zelfde kwaal als bij
-      # cafes/veiligheid/publieksonderzoek). Hergebruikt dezelfde FTP_*-secrets (poort 22).
-      # Via FTPS met lftp. Ging eerder over SFTP, maar de server toont sinds
-      # augustus 2026 een welkomsttekst bij het inloggen, en die belandt op
-      # hetzelfde kanaal als het SFTP-protocol → "Received message too long".
-      # Zelfde storing als bij de software-kaart en de cafés-app.
-      - name: Deploy build/ via FTPS
-        env:
-          FTP_SERVER: ${{ secrets.FTP_SERVER }}
-          FTP_USER: ${{ secrets.FTP_USERNAME }}
-          FTP_PASS: ${{ secrets.FTP_PASSWORD }}
-          FTP_DIR: ${{ secrets.FTP_SERVER_DIR }}
-        run: |
-          sudo apt-get update -qq && sudo apt-get install -y -qq lftp
-          # We landen in de map die alle domeinmappen bevat → relatief pad
-          # gebruiken (leidende én sluitende slash weg).
-          DIR="${FTP_DIR#/}"; DIR="${DIR%/}"
-          echo "Doelmap (relatief): $DIR"
-          lftp -u "$FTP_USER","$FTP_PASS" "$FTP_SERVER" <<LFTPEOF
-          set ftp:ssl-force true
-          set ftp:ssl-protect-data true
-          set ssl:verify-certificate no
-          set net:max-retries 3
-          mkdir -p "$DIR"
-          mirror -R --parallel=2 ./build "$DIR"
-          bye
-          LFTPEOF
-          echo "== verificatie =="
-          lftp -u "$FTP_USER","$FTP_PASS" "$FTP_SERVER" -e "set ftp:ssl-force true; set ssl:verify-certificate no; ls $DIR/index.html; bye" | tee /tmp/v.txt
-          grep -q "index.html" /tmp/v.txt || { echo "!! Upload niet teruggevonden op de server"; exit 1; }
-          echo "Upload OK"
-
-      # Tijdelijk ook naar de nieuwe server (migratie weg van Protagonist,
-      # augustus 2026). Zolang de DNS nog naar Plesk wijst is dit een
-      # schaduwkopie: de site blijft draaien waar hij draait, maar de nieuwe
-      # server heeft altijd dezelfde inhoud. Na het omschakelen vervalt de
-      # Plesk-stap hierboven en blijft alleen deze over.
       - name: Ook naar de nieuwe server (rsync over SSH)
         if: always()
         env:
