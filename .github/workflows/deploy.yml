@@ -23,6 +23,10 @@ jobs:
         run: npm run build
         env:
           CI: false
+          # De source map werd publiek meegeleverd: de broncode van deze app
+          # was zonder inloggen leesbaar op te halen. Scheelt bovendien
+          # ongeveer een derde van de bouwtijd.
+          GENERATE_SOURCEMAP: false
 
       - name: Ook naar de nieuwe server (rsync over SSH)
         if: always()
