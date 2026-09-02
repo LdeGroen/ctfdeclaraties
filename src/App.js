@@ -31,15 +31,51 @@ function App() {
 
     useEffect(() => {
         const params = new URLSearchParams(window.location.search);
+        const code = params.get('code');
         const t = params.get('token');
         const err = params.get('auth_error');
+
+        const opruimen = () => window.history.replaceState({}, '', window.location.pathname);
+
+        // De backend stuurt sinds augustus 2026 een eenmalige code terug in
+        // plaats van het token zelf: een token in een URL belandt in logs en
+        // in de geschiedenis van de browser. Die code wissel je binnen een
+        // minuut in. Deze app las alleen nog ?token= en negeerde de code, dus
+        // kwam je na het inloggen bij Google gewoon weer op het inlogscherm --
+        // wat aanvoelt als een eindeloze lus.
+        if (code) {
+            opruimen();
+            (async () => {
+                try {
+                    const res = await fetch(`${API_URL}/api/auth/exchange`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+                        body: JSON.stringify({ code }),
+                    });
+                    const json = res.ok ? await res.json() : null;
+                    if (json && json.token) {
+                        localStorage.setItem(TOKEN_KEY, json.token);
+                        setToken(json.token);
+                        return;
+                    }
+                } catch (e) {
+                    /* hieronder afgehandeld */
+                }
+                // Niet stil terugvallen op het inlogscherm: dan klikt iemand
+                // eindeloos opnieuw zonder te weten waarom het niet lukt.
+                setAuthFout('Inloggen is niet gelukt. De inlogcode was verlopen of al gebruikt; probeer het opnieuw.');
+            })();
+            return;
+        }
+
+        // Terugval voor de oude vorm, mocht die ergens nog voorbijkomen.
         if (t) {
             localStorage.setItem(TOKEN_KEY, t);
             setToken(t);
-            window.history.replaceState({}, '', window.location.pathname);
+            opruimen();
         } else if (err) {
             setAuthFout(err);
-            window.history.replaceState({}, '', window.location.pathname);
+            opruimen();
         }
     }, []);
 
