@@ -28,16 +28,24 @@ jobs:
           # ongeveer een derde van de bouwtijd.
           GENERATE_SOURCEMAP: false
 
+      # Bewust géén "if: always()": faalt de build, dan mag deze stap niet
+      # draaien. react-scripts leegt build/ al vóór het compileren, dus na een
+      # mislukte build zou rsync --delete de live site vervangen door een lege
+      # pagina. Stond hier eerst wél (erfenis van de oude Plesk-stap).
       - name: Ook naar de nieuwe server (rsync over SSH)
-        if: always()
         env:
           SSH_KEY: ${{ secrets.NIEUWE_SERVER_KEY }}
           SSH_USER: ${{ secrets.NIEUWE_SERVER_USER }}
           DOEL_PAD: ${{ secrets.NIEUWE_SERVER_PAD }}
         run: |
-          if [ -z "$SSH_KEY" ] || [ -z "$SSH_USER" ]; then
-            echo "nieuwe server nog niet ingesteld — overgeslagen"; exit 0
+          # Ontbreekt een secret, dan hard falen in plaats van stil slagen: anders
+          # lijkt de uitrol gelukt terwijl er niets is gekopieerd. Een lege
+          # DOEL_PAD maakt van het doel htdocs// en dan wist --delete de hele htdocs.
+          if [ -z "$SSH_KEY" ] || [ -z "$SSH_USER" ] || [ -z "$DOEL_PAD" ]; then
+            echo "::error::NIEUWE_SERVER_KEY, _USER of _PAD ontbreekt — er is niets uitgerold."; exit 1
           fi
+          # Een lege of halve build mag er niet doorheen glippen.
+          [ -s ./build/index.html ] || { echo "::error::build/index.html ontbreekt of is leeg — niets uitgerold."; exit 1; }
           mkdir -p ~/.ssh
           printf '%s\n' "$SSH_KEY" > ~/.ssh/nieuw_key
           chmod 600 ~/.ssh/nieuw_key
