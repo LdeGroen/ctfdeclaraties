@@ -64,8 +64,13 @@ function App() {
             ]);
             if (meRes.status === 401 || mijnRes.status === 401) { logout(); return; }
             const meJson = await meRes.json();
-            if (!String(meJson.email || '').endsWith('@cafetheaterfestival.nl')) {
-                setAuthFout('Log in met je @cafetheaterfestival.nl-account.');
+            // Wie mag declareren beslist de backend: medewerkers met een
+            // festivaladres, en gasten bij wie het festival dat heeft aangezet
+            // (Festivalhart -> Gebruikersbeheer). Hier stond eerst een eigen
+            // controle op het domein, en die liet zo'n gast er nooit in.
+            if (mijnRes.status === 403) {
+                const fout = await mijnRes.json().catch(() => ({}));
+                setAuthFout(fout.message || 'Je kunt hier geen declaraties indienen.');
                 logout();
                 return;
             }
@@ -164,7 +169,7 @@ function App() {
         return (
             <AppShell title="Declaraties & bonnen">
                 <div className="max-w-md mx-auto bg-white rounded-2xl shadow-xl p-8 text-center">
-                    <p className="text-gray-600 mb-6">Stuur je declaraties en bonnen in. Log in met je <strong>@cafetheaterfestival.nl</strong>-account.</p>
+                    <p className="text-gray-600 mb-6">Stuur je declaraties en bonnen in. Log in met je <strong>@cafetheaterfestival.nl</strong>-account, of als gast met het Google-account waarvoor het festival dit heeft aangezet.</p>
                     {authFout && <p className="text-red-600 text-sm mb-4">{authFout}</p>}
                     <button onClick={login} className="w-full py-3 px-6 bg-[#20747F] hover:bg-[#1a5f68] text-white font-semibold rounded-lg transition">
                         Inloggen met Google
