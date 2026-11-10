@@ -2,6 +2,7 @@
 module.exports = {
   presets: [require('ctf-ui/tailwind-preset')],
   content: [
+    "./index.html",
     "./src/**/*.{js,jsx,ts,tsx}",
     "./node_modules/ctf-ui/dist/*.js",
   ],
