@@ -16,9 +16,13 @@ import React from 'react';
  *   het niet op en blijft het scherm staan -- anders wordt het een lus.
  *   De bewoordingen zijn dezelfde als in `src/utils/chunkFout.js` van ctfcrm;
  *   wissel je van bundelaar, kijk dan daar én hier.
- * - **Hij meldt de fout zelf** via `window.ctfMeldFout` uit `index.html`. Een
- *   fout die hier wordt gevangen bereikt de globale foutmelder niet meer, en
- *   dan verdwijnt juist deze crash uit beeld.
+ * - **Hij meldt de fout zelf.** Een fout die hier wordt gevangen bereikt de
+ *   globale foutmelder in `index.html` niet meer, en dan verdwijnt juist deze
+ *   crash uit beeld. Daarom een `ErrorEvent` op `window`: daar luistert die
+ *   melder al naar. Bewust niet via `window.ctfMeldFout` zoals ctfopencall:
+ *   dat vraagt een regel in het inline-script, en dan klopt de sha256 in de
+ *   CSP niet meer (deploy/nginx/maak-headers.mjs in ctfbackend) en blokkeert
+ *   de browser de hele melder. Zo ging het op 21-11-2026 bij de eerste uitrol.
  *
  * Gelijk aan ctfopencall, behalve dat een gewone fout hier níet vanzelf
  * herlaadt: deze apps slaan niet tussentijds op, dus herladen kan ingevuld
@@ -74,6 +78,8 @@ export default class ErrorBoundary extends React.Component {
         try {
             if (typeof window.ctfMeldFout === 'function') {
                 window.ctfMeldFout(String(error && error.message), error && error.stack);
+            } else {
+                window.dispatchEvent(new ErrorEvent('error', { message: String(error && error.message), error }));
             }
         } catch {
             // Melden mag nooit een tweede crash geven.
