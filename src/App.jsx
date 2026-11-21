@@ -54,6 +54,15 @@ function App() {
         window.location.href = `${API_URL}/auth/google?return_to=${returnTo}`;
     };
     const logout = () => { localStorage.removeItem(TOKEN_KEY); setToken(null); setMe(null); };
+    // De knop Uitloggen trekt het token ook bij de backend in; anders bleef
+    // het nog dagen geldig in deze browser (audit POR-11). Lukt dat niet,
+    // dan wissen we hem hier toch.
+    const uitloggen = async () => {
+        try {
+            if (getToken()) await fetch(`${API_URL}/api/logout`, { method: 'POST', headers: auth() });
+        } catch { /* lokaal wissen gebeurt hoe dan ook */ }
+        logout();
+    };
 
     const laad = useCallback(async () => {
         if (!token) return;
@@ -184,7 +193,7 @@ function App() {
             <div className="max-w-2xl mx-auto">
                 <div className="flex justify-between items-center text-white/90 text-sm mb-4">
                     <span>Ingelogd als {me.name}</span>
-                    <button onClick={logout} className="underline hover:text-white">Uitloggen</button>
+                    <button onClick={uitloggen}className="underline hover:text-white">Uitloggen</button>
                 </div>
 
                 {status === 'success' && (
